@@ -2,7 +2,7 @@
 rprint() { for _ in $(seq "$1"); do echo -n "$2"; done }
 
 
-# course table helper function
+# display table helper function
 draw_table() {
     # draw table using search_cos_table() and
     # ${DAY}, ${DAY_N}, ${TIME}, $W, $H, ${CW}, ${CH}
@@ -56,8 +56,7 @@ parse_cos_table() {
     # parse ${course_table} into ${cos_table}
     for cos in $course_table; do
         name=$(echo "$cos" | cut -d'@' -f4)
-        time=$(echo "$cos" | cut -d'@' -f2)
-        time=$(echo "$time" | sed -e 's/\(.\)/\1 /g')
+        time=$(echo "$cos" | cut -d'@' -f2 | sed -e 's/\(.\)/\1 /g')
         d='0'
         for t in $time; do
             case $t in
@@ -76,7 +75,7 @@ search_cos_table() {
     done
 }
 
-load_display_table() {
+parse_display_table() {
     calculate_CH
     parse_cos_table
     display_table=$(draw_table)
@@ -84,14 +83,14 @@ load_display_table() {
 
 # add course helper function
 check_collision() {
-    time=$(echo "$1" | cut -d'@' -f2) 
-    time=$(echo "$time" | sed -e 's/\(.\)/\1 /g')
+    time=$(echo "$1" | cut -d'@' -f2 | sed -e 's/\(.\)/\1 /g')
+    collision=''
     d='0'
     for t in $time; do
         case $t in
             (*[!0-9]*|'')
                 has_coll=$(echo "$cos_table" | grep "$d$t@")
-                [ -z "$has_coll" ] || break;;
+                [ -n "$has_coll" ] && break;;
             (*) d=$t;;
         esac
     done
@@ -99,6 +98,14 @@ check_collision() {
         name=$(echo "$1" | cut -d'@' -f4 | sed -e 's/~/ /g') 
         collision="Collision: $d$t\n$name"
     fi
+}
+
+course_state() {
+    while true; do
+        dialog_course
+        dialog_collision "$collision"
+        [ -z "$collision" ] && break
+    done
 }
 
 
@@ -128,7 +135,8 @@ dialog_course() {
     check_collision "$cos"
     if [ -z "$collision" ]; then
         course_table="$course_table $cos"
-        load_display_table
+        parse_display_table
+        save_config
     fi
 }
 
@@ -138,18 +146,58 @@ dialog_collision() {
 }
 
 dialog_option() {
-    return 0
+    show_all_day='off'
+    show_all_time='off'
+    for opt in $table_option; do
+        case $opt in
+            1) show_all_day='on';;
+            2) show_all_time='on';;
+        esac
+    done
+    option=$(dialog --no-tags --checklist 'Option' 10 "$W" 2 1 'Show Sat Sun' $show_all_day 2 'Show MNXYL' $show_all_time 2>&1 > /dev/tty)
+    is_cancel="$?"
+    if [ "$is_cancel" = "0" ] && [ "$option" != "$table_option" ]; then
+        table_option="$option"
+        parse_table_option
+        parse_display_table
+        save_table_option
+    fi
 }
 
-# config helper function
+
+# config loading helper function
 load_all_course() {
     all_course=$(./download.sh)
 }
 
 load_course_table() {
-    course_table=$(tail -n 5 tmp.out)
+    course_table=''
+    if [ -f hw2.cfg ]; then
+        course_table=$(tail -n +2 hw2.cfg)
+    fi
 }
 
+load_table_option() {
+    if [ -f hw2.cfg ]; then
+        table_option=$(head -n 1 hw2.cfg)
+    fi
+}
+
+
+# config saving helper function
+save_config() {
+    echo "$table_option" > hw2.cfg
+    echo '' >> hw2.cfg
+    for cos in $course_table; do
+        echo "$cos" >> hw2.cfg
+    done
+}
+
+save_table_option() {
+    sed -i -e "1 s/^.*$/$table_option/" hw2.cfg
+}
+
+# config paring helper function
 parse_course_menu() {
     for cos in $all_course; do
         cid=$(echo "$cos" | cut -d'@' -f 1)
@@ -164,49 +212,60 @@ parse_course_menu() {
     done
 }
 
+parse_table_option() {
+    DAY='Mon Tue Wed Thu Fri '
+    DAY_N='1 2 3 4 5'
+    TIME='A B C D E F G H I J K'
+    for opt in $table_option; do
+        case $opt in
+            1)
+                DAY='Mon Tue Wed Thu Fri Sat Sun '
+                DAY_N='1 2 3 4 5 6 7'
+                ;;
+            2)
+                TIME='M N A B C D X E F G H Y I J K L'
+                ;;
+        esac
+    done
+    CW=$(( W / (${#DAY} / 4) - 3 ))
+}
+
 # global info
 W=$(tput cols)
 H=$(tput line)
 
-DAY='Mon Tue Wed Thu Fri '
-DAY_N='1 2 3 4 5'
-TIME='A B C D E F G H I J K'
-CW=$(( W / (${#DAY} / 4) - 3 ))
+DAY=''
+DAY_N=''
+TIME=''
+CW=1
 CH=1
 
-#DAY='Mon Tue Wed Thu Fri Sat Sun '
-#TIME='M N A B C D X E F G H Y I J K L'
-
-# all
+# config
 all_course=''
 all_course_count=0
 course_menu=''
-# user
+table_option=''
+# course
 course_table=''
 cos_table=''
 display_table=''
+
 
 # main
 load_all_course
 parse_course_menu
 
+load_table_option
+parse_table_option
+
 load_course_table
-load_display_table
+parse_display_table
 
 while true; do
     dialog_main
     case $? in
-        0)
-            while true; do
-                dialog_course
-                dialog_collision "$collision"
-                [ -z "$collision" ] && break
-            done;;
-        3)
-            dialog_option
-            ;;
-        2|255)
-            exit 0
-            ;;
+        0) course_state;;
+        3) dialog_option;;
+        2|255) break;;
     esac
 done
