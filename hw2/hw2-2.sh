@@ -105,8 +105,15 @@ check_collision() {
 course_state() {
     while true; do
         dialog_course
-        dialog_collision "$collision"
-        [ -z "$collision" ] && break
+        option=$?
+        case $option in
+            0)
+                dialog_collision "$collision"
+                [ -z "$collision" ] && break
+                ;;
+            1) break;;
+            2|3) continue;;
+        esac
     done
 }
 
@@ -125,12 +132,25 @@ dialog_main() {
 }
 
 dialog_course() {
-    cid=$(eval "dialog --no-tags --menu 'Add Class' $H $W $all_course_count $course_menu" 2>&1 > /dev/tty)
-    is_cancel=$?
-    if [ "$is_cancel" != "0" ]; then
-        collision=""
-        return 0
+    cid=$(eval "dialog --no-tags --help-button --help-label $show_collision --extra-button --extra-label 'Search' --menu 'Add Class' $H $W $all_course_count $course_menu" 2>&1 > /dev/tty)
+    option=$?
+    # Toggle Collision
+    if [ "$option" = "2" ]; then
+        if [ "$show_collision" = 'Show_All' ]; then
+            show_collision='Hide_Collision'
+        else
+            show_collision='Show_All'
+        fi
+        parse_course_menu
+        return 2
     fi
+    # Search
+    if [ "$option" = "3" ]; then
+        return 3
+    fi
+    # Cancel
+    [ "$option" != "0" ] && return 1
+    # Add Class
     for cos in $all_course; do
         [ "$cos" = "${cos#$cid}" ] || break
     done
@@ -140,6 +160,7 @@ dialog_course() {
         parse_display_table
         save_config
     fi
+    return 0
 }
 
 dialog_collision() {
@@ -151,17 +172,20 @@ dialog_option() {
     show_all_day='off'
     show_all_time='off'
     show_classroom='off'
+    show_nocoll='off'
     for opt in $table_option; do
         case $opt in
             1) show_all_day='on';;
             2) show_all_time='on';;
             3) show_classroom='on';;
+            4) show_nocoll='on';;
         esac
     done
-    option=$(dialog --no-tags --checklist 'Option' 10 "$W" 3 1 'Show Sat Sun' $show_all_day 2 'Show MNXYL' $show_all_time 3 'Show Classroom' $show_classroom 2>&1 > /dev/tty)
+    option=$(dialog --no-tags --checklist 'Default Option' 10 "$W" 4 1 'Show Sat Sun' $show_all_day 2 'Show MNXYL' $show_all_time 3 'Show Classroom' $show_classroom 4 'Not Show Collision in Menu' $show_nocoll 2>&1 > /dev/tty)
     is_cancel="$?"
     if [ "$is_cancel" = "0" ] && [ "$option" != "$table_option" ]; then
         table_option="$option"
+        parse_course_menu
         parse_table_option
         parse_display_table
         save_table_option
@@ -203,7 +227,15 @@ save_table_option() {
 
 # config paring helper function
 parse_course_menu() {
+    course_menu=''
+    all_course_count=0
+    check=0
+    [ "$show_collision" = 'Show_All' ] && check=1
     for cos in $all_course; do
+        if [ "$check" = "1" ]; then
+            check_collision "$cos"
+            [ -n "$collision" ] && continue
+        fi
         cid=$(echo "$cos" | cut -d'@' -f 1)
         entry=$(echo "$cos" | awk -F '@' '{
             printf "%s %s - ", $2, $4
@@ -221,6 +253,8 @@ parse_table_option() {
     DAY_N='1 2 3 4 5'
     TIME='A B C D E F G H I J K'
     show_classroom='off'
+    show_nocoll='off'
+    show_collision='Hide_Collision'
     for opt in $table_option; do
         case $opt in
             1)
@@ -232,6 +266,10 @@ parse_table_option() {
                 ;;
             3)
                 show_classroom='on'
+                ;;
+            4)
+                show_nocoll='on'
+                show_collision='Show_All'
                 ;;
         esac
     done
@@ -254,6 +292,8 @@ all_course_count=0
 course_menu=''
 table_option=''
 show_classroom=''
+show_nocoll=''
+show_collision=''
 # course
 course_table=''
 cos_table=''
