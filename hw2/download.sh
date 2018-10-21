@@ -12,6 +12,7 @@ parse_course() {
           cos_id = ""
           cos_time = ""
           cos_ename = ""
+          cos_class = ""
           flag = 0
         }
         /cos_id/ {
@@ -22,7 +23,8 @@ parse_course() {
         /cos_time/ {
           split($2, tmp, "\"")
           split(tmp[2], res, "-")
-          cos_time = res[1] "@" res[2]
+          cos_time = res[1]
+          cos_class = res[2]
           flag = 1
         }
         /cos_ename/ {
@@ -34,10 +36,11 @@ parse_course() {
         }
         /}/ {
           if (flag == 1)
-            print cos_id "@" cos_time "@" cos_ename
+            print cos_id "@" cos_time "@" cos_ename "@" cos_class
             cos_id = ""
             cos_time = ""
             cos_ename = ""
+            cos_class = ""
             flag = 0
         }'
 }

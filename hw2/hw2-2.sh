@@ -45,8 +45,9 @@ draw_table() {
 
 calculate_CH() {
     # calculate column height from ${course_table} into ${CH}
+    [ "$show_classroom" = 'on' ] && cf='-f3,4' || cf='-f3'
     for cos in $course_table; do
-        len=$(echo "$cos" | cut -d'@' -f4 | wc -c)
+        len=$(echo "$cos" | cut -d'@' "$cf" | wc -c)
         col=$(( (len + CW - 1) / CW ))
         CH=$(( CH > col ? CH : col ))
     done
@@ -55,7 +56,7 @@ calculate_CH() {
 parse_cos_table() {
     # parse ${course_table} into ${cos_table}
     for cos in $course_table; do
-        name=$(echo "$cos" | cut -d'@' -f4)
+        name=$(echo "$cos" | cut -d'@' -f3,4)
         time=$(echo "$cos" | cut -d'@' -f2 | sed -e 's/\(.\)/\1 /g')
         d='0'
         for t in $time; do
@@ -69,8 +70,9 @@ parse_cos_table() {
 
 search_cos_table() {
     # search "$1" in ${cos_table}, and result is ${name}
+    [ "$show_classroom" = 'on' ] && cf='-f2,3' || cf='-f2'
     for cos in $cos_table; do
-        name=$(echo "$cos" | grep "^$1" | cut -d'@' -f2)
+        name=$(echo "$cos" | grep "^$1" | cut -d'@' "$cf")
         [ -z "$name" ] || return 0
     done
 }
@@ -95,7 +97,7 @@ check_collision() {
         esac
     done
     if [ -n "$has_coll" ]; then
-        name=$(echo "$1" | cut -d'@' -f4 | sed -e 's/~/ /g') 
+        name=$(echo "$1" | cut -d'@' -f3 | sed -e 's/~/ /g')
         collision="Collision: $d$t\n$name"
     fi
 }
@@ -111,7 +113,7 @@ course_state() {
 
 # dialog helper function
 dialog_main() {
-    tmpfile=$(mktemp /tmp/hw2)
+    tmpfile=$(mktemp /tmp/hw2.XXX)
     echo "$display_table" > "$tmpfile"
     dialog --ok-label 'Add Course' --extra-button --extra-label 'Option' \
         --help-button --help-label 'Exit' \
@@ -148,13 +150,15 @@ dialog_collision() {
 dialog_option() {
     show_all_day='off'
     show_all_time='off'
+    show_classroom='off'
     for opt in $table_option; do
         case $opt in
             1) show_all_day='on';;
             2) show_all_time='on';;
+            3) show_classroom='on';;
         esac
     done
-    option=$(dialog --no-tags --checklist 'Option' 10 "$W" 2 1 'Show Sat Sun' $show_all_day 2 'Show MNXYL' $show_all_time 2>&1 > /dev/tty)
+    option=$(dialog --no-tags --checklist 'Option' 10 "$W" 3 1 'Show Sat Sun' $show_all_day 2 'Show MNXYL' $show_all_time 3 'Show Classroom' $show_classroom 2>&1 > /dev/tty)
     is_cancel="$?"
     if [ "$is_cancel" = "0" ] && [ "$option" != "$table_option" ]; then
         table_option="$option"
@@ -202,10 +206,10 @@ parse_course_menu() {
     for cos in $all_course; do
         cid=$(echo "$cos" | cut -d'@' -f 1)
         entry=$(echo "$cos" | awk -F '@' '{
-            printf "%s %s - ", $2, $3
-            $0 = $4
+            printf "%s %s - ", $2, $4
+            $0 = $3
             gsub(/~/, " ")
-            print $0
+            printf $0
         }')
         course_menu="$course_menu $cid \"$entry\""
         all_course_count=$(( all_course_count + 1 ))
@@ -216,6 +220,7 @@ parse_table_option() {
     DAY='Mon Tue Wed Thu Fri '
     DAY_N='1 2 3 4 5'
     TIME='A B C D E F G H I J K'
+    show_classroom='off'
     for opt in $table_option; do
         case $opt in
             1)
@@ -225,6 +230,9 @@ parse_table_option() {
             2)
                 TIME='M N A B C D X E F G H Y I J K L'
                 ;;
+            3)
+                show_classroom='on'
+                ;;
         esac
     done
     CW=$(( W / (${#DAY} / 4) - 3 ))
@@ -232,7 +240,7 @@ parse_table_option() {
 
 # global info
 W=$(tput cols)
-H=$(tput line)
+H=$(tput lines)
 
 DAY=''
 DAY_N=''
@@ -245,6 +253,7 @@ all_course=''
 all_course_count=0
 course_menu=''
 table_option=''
+show_classroom=''
 # course
 course_table=''
 cos_table=''
@@ -260,6 +269,7 @@ parse_table_option
 
 load_course_table
 parse_display_table
+
 
 while true; do
     dialog_main
