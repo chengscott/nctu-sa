@@ -103,16 +103,25 @@ check_collision() {
 }
 
 course_state() {
+    restore=0
     while true; do
         dialog_course
         option=$?
+        if [ "$restore" = "1" ]; then
+            parse_course_menu
+            restore=0
+        fi
         case $option in
             0)
-                dialog_collision "$collision"
+                dialog_msgbox "$collision"
                 [ -z "$collision" ] && break
                 ;;
             1) break;;
-            2|3) continue;;
+            2) continue;;
+            3)
+                dialog_search
+                restore=1
+                ;;
         esac
     done
 }
@@ -132,7 +141,7 @@ dialog_main() {
 }
 
 dialog_course() {
-    cid=$(eval "dialog --no-tags --help-button --help-label $show_collision --extra-button --extra-label 'Search' --menu 'Add Class' $H $W $all_course_count $course_menu" 2>&1 > /dev/tty)
+    cid=$(eval "dialog --no-tags --help-button --help-label $show_collision --extra-button --extra-label 'Search' --menu 'Add Class' $H $W $all_course_count $course_menu" 3>&1 1>&2 2>&3)
     option=$?
     # Toggle Collision
     if [ "$option" = "2" ]; then
@@ -145,9 +154,7 @@ dialog_course() {
         return 2
     fi
     # Search
-    if [ "$option" = "3" ]; then
-        return 3
-    fi
+    [ "$option" = "3" ] && return 3
     # Cancel
     [ "$option" != "0" ] && return 1
     # Add Class
@@ -163,7 +170,28 @@ dialog_course() {
     return 0
 }
 
-dialog_collision() {
+dialog_search() {
+    search_time=''
+    search_name=''
+    sname=$(dialog --inputbox "Search Course Name / Time" 8 $W 3>&1 1>&2 2>&3)
+    status="$?"
+    [ "$status" != "0" ] && return
+    if ! case "$sname" in [0-9]*) false;; esac; then
+        search_time="$sname"
+    else
+        search_name="$sname"
+    fi
+    parse_course_menu
+    search_time=''
+    search_name=''
+    if [ "$all_course_count" = '0' ]; then
+        dialog_msgbox 'No Course Match'
+        parse_course_menu
+        restore=1
+    fi
+}
+
+dialog_msgbox() {
     [ -z "$1" ] && return 0
     dialog --msgbox "$1" 6 "$W"
 }
@@ -181,7 +209,7 @@ dialog_option() {
             4) show_nocoll='on';;
         esac
     done
-    option=$(dialog --no-tags --checklist 'Default Option' 10 "$W" 4 1 'Show Sat Sun' $show_all_day 2 'Show MNXYL' $show_all_time 3 'Show Classroom' $show_classroom 4 'Not Show Collision in Menu' $show_nocoll 2>&1 > /dev/tty)
+    option=$(dialog --no-tags --checklist 'Default Option' 10 "$W" 4 1 'Show Sat Sun' $show_all_day 2 'Show MNXYL' $show_all_time 3 'Show Classroom' $show_classroom 4 'Not Show Collision in Menu' $show_nocoll 3>&1 1>&2 2>&3)
     is_cancel="$?"
     if [ "$is_cancel" = "0" ] && [ "$option" != "$table_option" ]; then
         table_option="$option"
@@ -195,7 +223,7 @@ dialog_option() {
 
 # config loading helper function
 load_all_course() {
-    all_course=$(./download.sh)
+    all_course=$(./download.sh | sort -u)
 }
 
 load_course_table() {
@@ -231,12 +259,39 @@ parse_course_menu() {
     all_course_count=0
     check=0
     [ "$show_collision" = 'Show_All' ] && check=1
+    search_name=$(echo "$search_name" | sed -e 's/ /~/g')
+    search_time=$(echo "$search_time" | sed -e 's/\(.\)/\1 /g')
     for cos in $all_course; do
         if [ "$check" = "1" ]; then
             check_collision "$cos"
             [ -n "$collision" ] && continue
         fi
-        cid=$(echo "$cos" | cut -d'@' -f 1)
+        if [ -n "$search_name" ]; then
+            match=$(echo "$cos" | cut -d'@' -f3 | grep -c "$search_name")
+            [ "$match" = '0' ] && continue
+        elif [ -n "$search_time" ]; then
+            time=$(echo "$cos" | cut -d'@' -f2 | sed -e 's/\(.\)/\1 /g')
+            ctime=''
+            d=0
+            for t in $time; do
+                case $t in
+                    (*[!0-9]*|'') ctime="$d$t@$ctime";;
+                    (*) d=$t;;
+                esac
+            done
+            match=1
+            d=0
+            for t in $search_time; do
+                case $t in
+                    (*[!0-9]*|'')
+                        [ "$match" = '1' ] && match=$(echo "$ctime" | grep -c "$d$t")
+                        ;;
+                    (*) d=$t;;
+                esac
+            done
+            [ "$match" = '0' ] && continue
+        fi
+        cid=$(echo "$cos" | cut -d'@' -f1)
         entry=$(echo "$cos" | awk -F '@' '{
             printf "%s %s - ", $2, $4
             $0 = $3
