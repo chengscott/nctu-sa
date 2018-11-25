@@ -1,0 +1,100 @@
+#!/usr/bin/env python3.6
+import argparse
+import datetime
+import os
+import re
+import shlex
+import subprocess
+
+
+def run(cmd):
+    try:
+        proc = subprocess.run(
+            shlex.split(cmd),
+            check=True,
+            stdout=subprocess.PIPE,
+            encoding='utf-8')
+    except subprocess.CalledProcessError as e:
+        exit(e.returncode)
+    return proc.stdout
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--list', action='store_true')
+    parser.add_argument('--delete', action='store_true')
+    parser.add_argument('--export', action='store_true')
+    parser.add_argument('--import', action='store_true')
+    parser.add_argument('dataset', nargs='?')
+    parser.add_argument('positional', nargs='?')
+    args = parser.parse_args()
+    if args.__dict__['import']:
+        dataset, filename = args.dataset, args.positional
+        if not dataset:
+            parser.error('the following arguments are required: dataset')
+        if not filename:
+            parser.error('the following arguments are required: filename')
+        cmd = f'openssl enc -d -aes256 -in {filename} | unxz | zfs recv -F {dataset}'
+        print(cmd)
+        os.system(cmd)
+    elif args.export:
+        dataset = args.dataset
+        if not dataset:
+            parser.error('the following arguments are required: dataset')
+        dsid = 0
+        if args.positional:
+            dsid = int(dsid) - 1
+        snapshots = run('zfs list -t snapshot')
+        snap = re.findall(f'{dataset}@\S*', snapshots)
+        sp = snap[dsid]
+        name = sp.split('_')[0].replace('/', '_')
+        cmd = f'zfs send {sp} | xz | openssl enc -e -aes256 -out {name}.xz.enc'
+        os.system(cmd)
+    elif args.delete:
+        dataset, dsid = args.dataset, args.positional
+        if not dataset:
+            parser.error('the following arguments are required: dataset')
+        snapshots = run('zfs list -t snapshot')
+        snap = re.findall(f'{dataset}@\S*', snapshots)
+        if dsid:
+            dsid = int(dsid) - 1
+            cmd = f'zfs destroy {snap[dsid]}'
+            run(cmd)
+        else:
+            for sp in snap:
+                cmd = f'zfs destroy {sp}'
+                run(cmd)
+    elif args.list:
+        snapshots = run('zfs list -t snapshot')
+        dataset = args.dataset if args.dataset else '.*'
+        snap = re.findall(f'{dataset}@\S*', snapshots)
+        print('ID\tDataset\tTime')
+        for i, sp in enumerate(snap):
+            ds, t = sp.split('@')
+            print(i + 1, ds, t.replace('_', ' '), sep='\t')
+    else:
+        dataset = args.dataset
+        if not dataset:
+            parser.error('the following arguments are required: dataset')
+        count = 20
+        if args.positional:
+            count = int(args.positional)
+        snapshots = run('zfs list -t snapshot')
+        snap = re.findall(f'{dataset}@\S*', snapshots)
+        if len(snap) >= count:
+            tsnap = list(snap)
+            sorted(tsnap, key=lambda x: datetime.datetime.strptime(x, f'{dataset}@%Y-%m-%d_%H:%M:%S'))
+            dc = len(tsnap) - count + 1
+            tsnap = tsnap[0:dc]
+            for sp in tsnap:
+                cmd = f'zfs destroy {sp}'
+                run(cmd)
+                print(f'Rotate {sp}')
+        date = datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
+        cmd = f'zfs snapshot {dataset}@{date}'
+        run(cmd)
+        print(f'Snap {dataset}@{date}')
+
+
+if __name__ == '__main__':
+    main()
