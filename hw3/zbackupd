@@ -1,0 +1,74 @@
+#!/usr/bin/env python3.6
+import argparse
+import os
+import sys
+import yaml
+from time import sleep
+
+
+def load_config(path):
+    def to_sec(period):
+        n, c = int(period[:-1]), period[-1]
+        time = {
+            's': 1,
+            'm': 60,
+            'h': 60 * 60,
+            'd': 60 * 60 * 24,
+            'w': 60 * 60 * 24 * 7,
+        }
+        return n * time[c]
+
+    def lcm(numbers):
+        from functools import reduce
+        from math import gcd
+
+        def lcm(a, b):
+            return (a // gcd(a, b)) * b
+
+        return reduce(lcm, numbers, 1)
+
+    config = {}
+    with open(path) as f:
+        config = yaml.load(f.read())
+    config = [c for c in config['backup'] if c.get('enabled', True)]
+    for c in config:
+        c['period'] = to_sec(c['period'])
+        c['cur'] = 0
+    period = lcm([c['period'] for c in config])
+    return config, period
+
+
+def run_main(cfg):
+    config, period = load_config(cfg)
+    while True:
+        for c in config:
+            if c['cur'] == 0:
+                c['cur'] = (c['cur'] + period) % c['period']
+                dataset, rotation = c['dataset'], c.get('rotation', '')
+                os.system(f'zbackup {dataset} {rotation}')
+        sleep(period)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-d', action='store_true')
+    parser.add_argument('-c', default='/usr/local/etc/zbackupd.yaml')
+    parser.add_argument('-p', default='/var/run/zbackup.pid')
+    args = parser.parse_args()
+    if os.path.isfile(args.p):
+        print('Error: zbackupd is already running.', file=sys.stderr)
+        exit(-1)
+    if not os.path.isfile(args.c):
+        print(f'Error: {args.c} does not exists.', file=sys.stderr)
+        exit(-1)
+    if args.d:
+        pid = os.fork()
+        if pid != 0:
+            with open(args.p, 'w'):
+                f.write(str(pid))
+            exit(0)
+    run_main(args.c)
+
+
+if __name__ == '__main__':
+    main()

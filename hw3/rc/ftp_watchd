@@ -1,0 +1,20 @@
+#!/bin/sh
+
+. /etc/rc.subr
+
+name=ftp_watchd
+rcvar=ftp_watchd_enable
+
+start_precmd="ftp_watchd_prestart"
+
+ftp_watchd_prestart() {
+    echo '#!/bin/sh' > /tmp/fws.sh
+    sed -n 's/ftp_watchd_command="\(.*\)"/\1/gp' /etc/rc.conf >> /tmp/fws.sh
+    chmod +x /tmp/fws.sh
+}
+
+command="/usr/local/sbin/pure-uploadscript"
+command_args="-B -r /tmp/fws.sh"
+
+load_rc_config $name
+run_rc_command "$1"
