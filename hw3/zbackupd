@@ -3,10 +3,9 @@ import argparse
 import os
 import signal
 import sys
+import threading
 import yaml
 from time import sleep
-
-config_file = ''
 
 
 def load_config():
@@ -38,22 +37,27 @@ def load_config():
     return config, period
 
 
-cfg, period = {}, 0
-
-
-def run_main():
+def run_thread():
+    global event, cfg, period
     while True:
         for c in cfg:
             if c['cur'] == 0:
                 c['cur'] = (c['cur'] + period) % c['period']
                 dataset, rotation = c['dataset'], c.get('rotation', '')
                 os.system(f'/usr/local/bin/zbackup {dataset} {rotation}')
-        sleep(period)
+        event.wait(timeout=period)
+        event.clear()
+
+
+def run_main():
+    while True:
+        signal.pause()
 
 
 def sig_reload(sig, frame):
-    global cfg, period
+    global event, cfg, period
     cfg, period = load_config()
+    event.set()
 
 
 def main():
@@ -74,10 +78,12 @@ def main():
             with open(args.p, 'w') as f:
                 f.write(str(pid))
             exit(0)
-    global config_file, cfg, period
+    global config_file, event, cfg, period
     config_file = args.c
     signal.signal(signal.SIGUSR1, sig_reload)
     cfg, period = load_config()
+    threading.Thread(target=run_thread).start()
+    event = threading.Event()
     run_main()
 
 
