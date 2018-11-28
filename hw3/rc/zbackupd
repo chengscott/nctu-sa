@@ -5,10 +5,17 @@
 name=zbackupd
 rcvar=zbackupd_enable
 zbackupd_config=`sed -n 's/zbackupd_config="\(.*\)"/\1/gp' /etc/rc.conf`
-zbackupd_config=$(zbackupd_config:-"/usr/local/etc/zbackupd.yaml"}
+zbackupd_config=${zbackupd_config:-"/usr/local/etc/zbackupd.yaml"}
 
-command="/usr/local/bin/zbackupd"
-command_args="-d -c $zbackupd_config > /var/log/zbackup.log"
+pidfile="/var/run/zbackup.pid"
+
+sig_reload="USR1"
+
+stop_postcmd="rm ${pidfile}"
+
+command="/usr/local/bin/python3.6"
+command_args="/usr/local/bin/zbackupd -d -c ${zbackupd_config} -p ${pidfile} > /var/log/zbackup.log"
+extra_commands="reload list"
 
 load_rc_config $name
 run_rc_command "$1"

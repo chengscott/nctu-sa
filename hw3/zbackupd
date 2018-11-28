@@ -1,12 +1,15 @@
-#!/usr/bin/env python3.6
+#!/usr/local/bin/python3.6
 import argparse
 import os
+import signal
 import sys
 import yaml
 from time import sleep
 
+config_file = ''
 
-def load_config(path):
+
+def load_config():
     def to_sec(period):
         n, c = int(period[:-1]), period[-1]
         time = {
@@ -18,35 +21,39 @@ def load_config(path):
         }
         return n * time[c]
 
-    def lcm(numbers):
+    def gcd(numbers):
         from functools import reduce
         from math import gcd
 
-        def lcm(a, b):
-            return (a // gcd(a, b)) * b
-
-        return reduce(lcm, numbers, 1)
+        return reduce(gcd, numbers)
 
     config = {}
-    with open(path) as f:
+    with open(config_file) as f:
         config = yaml.load(f.read())
     config = [c for c in config['backup'] if c.get('enabled', True)]
     for c in config:
         c['period'] = to_sec(c['period'])
         c['cur'] = 0
-    period = lcm([c['period'] for c in config])
+    period = gcd([c['period'] for c in config])
     return config, period
 
 
-def run_main(cfg):
-    config, period = load_config(cfg)
+cfg, period = {}, 0
+
+
+def run_main():
     while True:
-        for c in config:
+        for c in cfg:
             if c['cur'] == 0:
                 c['cur'] = (c['cur'] + period) % c['period']
                 dataset, rotation = c['dataset'], c.get('rotation', '')
-                os.system(f'zbackup {dataset} {rotation}')
+                os.system(f'/usr/local/bin/zbackup {dataset} {rotation}')
         sleep(period)
+
+
+def sig_reload(sig, frame):
+    global cfg, period
+    cfg, period = load_config()
 
 
 def main():
@@ -64,10 +71,14 @@ def main():
     if args.d:
         pid = os.fork()
         if pid != 0:
-            with open(args.p, 'w'):
+            with open(args.p, 'w') as f:
                 f.write(str(pid))
             exit(0)
-    run_main(args.c)
+    global config_file, cfg, period
+    config_file = args.c
+    signal.signal(signal.SIGUSR1, sig_reload)
+    cfg, period = load_config()
+    run_main()
 
 
 if __name__ == '__main__':

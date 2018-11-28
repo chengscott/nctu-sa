@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.6
+#!/usr/local/bin/python3.6
 import argparse
 import datetime
 import os
@@ -34,9 +34,11 @@ def main():
             parser.error('the following arguments are required: dataset')
         if not filename:
             parser.error('the following arguments are required: filename')
-        cmd = f'openssl enc -d -aes256 -in {filename} | unxz | zfs recv -F {dataset}'
-        print(cmd)
+        date = datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
+        name = f'{dataset}@{date}'
+        cmd = f'openssl enc -d -aes256 -in {filename} | unxz | zfs recv -F {name}'
         os.system(cmd)
+        cmd = f'zfs rollback {name}'
     elif args.export:
         dataset = args.dataset
         if not dataset:
