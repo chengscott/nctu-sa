@@ -34,11 +34,19 @@ def main():
             parser.error('the following arguments are required: dataset')
         if not filename:
             parser.error('the following arguments are required: filename')
+        # delete
+        # snapshots = run('zfs list -t snapshot')
+        # snap = re.findall(f'{dataset}@\S*', snapshots)
+        # for sp in snap:
+        #     cmd = f'zfs destroy {sp}'
+        #     run(cmd)
+        # import
         date = datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
         name = f'{dataset}@{date}'
         cmd = f'openssl enc -d -aes256 -in {filename} | unxz | zfs recv -F {name}'
         os.system(cmd)
-        cmd = f'zfs rollback {name}'
+        cmd = f'zfs rollback -r {name}'
+        os.system(cmd)
     elif args.export:
         dataset = args.dataset
         if not dataset:
